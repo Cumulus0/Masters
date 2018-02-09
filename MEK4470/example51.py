@@ -32,12 +32,8 @@ def analytical():
 
 def error():
     return np.linalg.norm()
-    pass
 
 def L2_order():
-    pass
-
-def scheme():
     pass
 
 def main():
