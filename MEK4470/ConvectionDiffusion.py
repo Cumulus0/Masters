@@ -9,9 +9,10 @@ from numpy import *
 from pylab import *
 
 def central_diff(N):
-    faces = linspace(0, 1., N+1)
-    nodes = 0.5*(faces[1:] + faces[:-1])
-    delta = faces[1]-faces[0]
+    face = linspace(0, 1., N+1)
+    #face.shape
+    nodes = 0.5*(face[1:] + face[:-1])
+    delta = face[1] - face[0]
 
     # constants
     L = 1.0
@@ -23,31 +24,17 @@ def central_diff(N):
     # Set up linear system of equations
     A = zeros((N, N))
     b = zeros(N)
-    
-
-    r = zeros(N)
-    r = zeros(N)
-    r[0] = 0
-    r[-1] = 0
-
-    lim = zeros(N) #limiter function
-    lim[0]= 0
-    lim[-1] = 0
 
     phi = linspace(1.,0.,N) 
     phi[0] = phi_a
     phi[-1] = phi_b
-
-    for i in range(1,N-1):
-        r[i] = (phi[i] - phi[i-1]) / (phi[i+1] - phi[i]) #Van Leer limiter
-        lim[i] = (r[i] + abs(r[i])) / (1 + abs(r[i]))
     
     # ap*T_P - aw*T_W - ae*T_E = 0
     for i in range(1, N-1):
         aw = D + F/2
         ae = D - F/2
         sp = 0
-        su = -F*(0.5*lim[i]*(phi[i+1] - phi[i]))
+        su = 0
         ap = aw + ae - sp
         A[i, i-1] = -aw
         A[i, i]   = ap
@@ -74,7 +61,7 @@ def central_diff(N):
     A[-1, -2] = -aw
     b[-1] = su
 
-    return nodes,A,b
+    return(face,nodes,A,b)
         
 
 
@@ -199,20 +186,51 @@ def analytical(x_):
     F=0.2
     return (-1 * (exp(F * (x_/0.1)) - 1) / (exp(F * (1.0/0.1)) - 1)) + 1
 
-def L2_norm(num, anal, N):
+def L2_norm(num, anal):
     #return linalg.norm(num - anal)
     return linalg.norm(num-anal,2) #sqrt(1/N * sum((num - anal)**2))
 
+def tvd(N,phi,b,faces):
+    #intialize
+    F = 0.1 # rho*u
+    D = 0.1 / (1.0/N) # gamma/dx
+    phi_a = 0 
+    r_e = 0
+    r_w = 0
+    lim_e = 0
+    lim_w = 0
+    
+    for i in range(1,N-1):
+        if i == 1:
+            r_w = (2*phi[i] - phi_a) / (phi[i+1] - phi[i])
+            lim_w = (r_w + abs(r_w)) / (1 + abs(r_w))
+            b[i] +=  F*(0.5*lim_w*(phi[i] - phi[i-1]))
+
+        r_e = (phi[i] - phi[i-1]) / (phi[i+1] - phi[i]) #Van Leer limiter
+        r_w = (phi[i-1] - phi[i-2]) / (phi[i] - phi[i-1])
+        lim_e = (r_e + abs(r_e)) / (1 + abs(r_e))
+        lim_w = (r_w + abs(r_w)) / (1 + abs(r_w))
+        b[i] += -F*(0.5*lim_e*(phi[i+1] - phi[i])) + F*(0.5*lim_w*(phi[i] - phi[i-1])) 
+
+    return b
+
 if __name__ == '__main__':
+    TVD = True
     err = []
     N = list(range(5,21))
 
     for i in N:
-        nodes,A,b = central_diff(i)
+        face,nodes,A,b = central_diff(i)
         T = solve(A, b)
+
+        if TVD:
+            b = tvd(i,T,b,face)
+            T = solve(A,b)
+            print('TVD solve!')
+
         exact = analytical(nodes)
-        err.append(L2_norm(T,exact, i))
-    print(T)
+        err.append(L2_norm(T,exact))
+        
     figure(1)
     subplot(211)
     plot(nodes, T, 'b')
@@ -222,8 +240,9 @@ if __name__ == '__main__':
     title('Phi distribution')
 
     subplot(212)
-    loglog(1 / asarray(N), err)
-    loglog(1 / asarray(N), err, 1 / asarray(N), err[0]*(1 / asarray(N) * N[0]))
+    loglog(1 / asarray(N), err, 'g')
+    loglog(1 / asarray(N), err[0]*(1 / asarray(N) * N[0]), 'c')
+    #loglog(1 / asarray(N), err[0]*(1 / asarray(N) * N[0]))
     xlabel('h')
     ylabel('L2 Error')
     title('Error vs. h')
